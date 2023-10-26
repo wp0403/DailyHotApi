@@ -1,62 +1,59 @@
 /*
- * @author: MCBBC
- * @date: 2023-07-17
+ * @author: MyFaith
+ * @date: 2023-09-06
  * @customEditors: imsyy
- * @lastEditTime: 2023-07-17
+ * @lastEditTime: 2023-09-06
  */
 
 const Router = require("koa-router");
-const kuaishouRouter = new Router();
+const doubanNewRouter = new Router();
 const axios = require("axios");
+const cheerio = require("cheerio");
 const { get, set, del } = require("../utils/cacheData");
 
 // 接口信息
 const routerInfo = {
-  name: "kuaishou",
-  title: "快手",
-  subtitle: "热榜",
+  name: "douban",
+  title: "豆瓣",
+  subtitle: "新片榜",
 };
 
 // 缓存键名
-const cacheKey = "kuaishouData";
+const cacheKey = "doubanNewData";
 
 // 调用时间
 let updateTime = new Date().toISOString();
 
 // 调用路径
-const url = "https://www.kuaishou.com/?isHome=1";
+const url = "https://movie.douban.com/chart/";
+const headers = {
+  "User-Agent":
+    "Mozilla/5.0 (iPhone; CPU iPhone OS 15_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/15.0 Mobile/15E148 Safari/604.1",
+};
 
-// Unicode 解码
-const decodedString = (encodedString) => {
-  return encodedString.replace(/\\u([\d\w]{4})/gi, (match, grp) =>
-    String.fromCharCode(parseInt(grp, 16)),
-  );
+// 豆瓣新片榜单特殊处理 - 标题
+const replaceTitle = (title, score) => {
+  return `[★${score}] ` + title.replace(/\n/g, "").replace(/ /g, "").replace(/\//g, " / ").trim();
 };
 
 // 数据处理
 const getData = (data) => {
-  if (!data) return [];
+  if (!data) return false;
   const dataList = [];
+  const $ = cheerio.load(data);
   try {
-    const pattern = /window.__APOLLO_STATE__=(.*);\(function\(\)/s;
-    const idPattern = /clientCacheKey=([A-Za-z0-9]+)/s;
-    const matchResult = data.match(pattern);
-    const jsonObject = JSON.parse(matchResult[1])["defaultClient"];
+    $(".article .item").map((idx, item) => {
+      const id = $(item).find("a").attr("href").split("/").at(-2) ?? "";
+      const score = $(item).find(".rating_nums").text() ?? "";
 
-    // 获取所有分类
-    const allItems = jsonObject['$ROOT_QUERY.visionHotRank({"page":"home"})']["items"];
-    // 遍历所有分类
-    allItems.forEach((v) => {
-      // 基础数据
-      const image = jsonObject[v.id]["poster"];
-      const id = image.match(idPattern)[1];
-      // 数据处理
       dataList.push({
-        title: jsonObject[v.id]["name"],
-        pic: decodedString(image),
-        hot: jsonObject[v.id]["hotValue"],
-        url: `https://www.kuaishou.com/short-video/${id}`,
-        mobileUrl: `https://www.kuaishou.com/short-video/${id}`,
+        title: replaceTitle($(item).find("a").text(), score),
+        desc: $(item).find("p").text(),
+        score,
+        comments: $(item).find("span.pl").text().match(/\d+/)[0] ?? "",
+        pic: $(item).find("img").attr("src") ?? "",
+        url: $(item).find("a").attr("href") ?? "",
+        mobileUrl: `https://m.douban.com/movie/subject/${id}`,
       });
     });
     return dataList;
@@ -66,18 +63,18 @@ const getData = (data) => {
   }
 };
 
-// 快手热榜
-kuaishouRouter.get("/kuaishou", async (ctx) => {
-  console.log("获取快手热榜");
+// 豆瓣新片榜
+doubanNewRouter.get("/douban_new", async (ctx) => {
+  console.log("获取豆瓣新片榜");
   try {
     // 从缓存中获取数据
     let data = await get(cacheKey);
     const from = data ? "cache" : "server";
     if (!data) {
       // 如果缓存中不存在数据
-      console.log("从服务端重新获取快手热榜");
+      console.log("从服务端重新获取豆瓣新片榜");
       // 从服务器拉取数据
-      const response = await axios.get(url);
+      const response = await axios.get(url, { headers });
       data = getData(response.data);
       updateTime = new Date().toISOString();
       if (!data) {
@@ -110,23 +107,23 @@ kuaishouRouter.get("/kuaishou", async (ctx) => {
   }
 });
 
-// 快手热榜 - 获取最新数据
-kuaishouRouter.get("/kuaishou/new", async (ctx) => {
-  console.log("获取快手热榜 - 最新数据");
+// 豆瓣新片榜 - 获取最新数据
+doubanNewRouter.get("/douban_new/new", async (ctx) => {
+  console.log("获取豆瓣新片榜 - 最新数据");
   try {
     // 从服务器拉取最新数据
-    const response = await axios.get(url);
+    const response = await axios.get(url, { headers });
     const newData = getData(response.data);
     updateTime = new Date().toISOString();
-    console.log("从服务端重新获取快手热榜");
+    console.log("从服务端重新获取豆瓣新片榜");
 
     // 返回最新数据
     ctx.body = {
       code: 200,
       message: "获取成功",
       ...routerInfo,
-      total: newData.length,
       updateTime,
+      total: newData.length,
       data: newData,
     };
 
@@ -158,5 +155,5 @@ kuaishouRouter.get("/kuaishou/new", async (ctx) => {
   }
 });
 
-kuaishouRouter.info = routerInfo;
-module.exports = kuaishouRouter;
+doubanNewRouter.info = routerInfo;
+module.exports = doubanNewRouter;

@@ -128,7 +128,7 @@ itHomeRouter.get("/ithome/new", async (ctx) => {
       message: "获取成功",
       ...routerInfo,
       updateTime,
-      total: data.length,
+      total: newData.length,
       data: newData,
     };
 
@@ -145,7 +145,7 @@ itHomeRouter.get("/ithome/new", async (ctx) => {
         code: 200,
         message: "获取成功",
         ...routerInfo,
-        total: data.length,
+        total: cachedData.length,
         updateTime,
         data: cachedData,
       };
